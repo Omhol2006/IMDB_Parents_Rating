@@ -340,7 +340,11 @@ def get_imdb_id_from_letterboxd(slug):
         # Appears in JSON-LD as aggregateRating.ratingValue
         for script in soup.find_all('script', type='application/ld+json'):
             try:
-                data = json.loads(script.string or '{}')
+                raw_json = (script.string or '').strip()
+                if raw_json.startswith('/* <![CDATA[ */'):
+                    raw_json = raw_json.replace('/* <![CDATA[ */', '').replace('/* ]]> */', '').strip()
+                
+                data = json.loads(raw_json or '{}')
                 # Grab LB rating
                 agg = data.get('aggregateRating', {})
                 if agg and agg.get('ratingValue'):
@@ -497,7 +501,7 @@ def api_letterboxd_film_guide():
 import datetime
 import uuid
 
-SAVED_LISTS_FILE = os.path.join(os.path.dirname(__file__), 'saved_lists.json')
+SAVED_LISTS_FILE = os.path.abspath(os.path.join(os.path.dirname(__file__), 'saved_lists.json'))
 
 def _load_lists():
     if os.path.exists(SAVED_LISTS_FILE):
