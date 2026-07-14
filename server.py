@@ -492,41 +492,67 @@ def api_letterboxd_film_guide():
 
 
 # ---------------------------------------------------------------------------
-# Saved List API  (server-side JSON file persistence)
+# Saved Lists API  (multiple named lists, stored in saved_lists.json)
 # ---------------------------------------------------------------------------
-SAVED_LIST_FILE = os.path.join(os.path.dirname(__file__), 'saved_list.json')
+import datetime
+import uuid
 
-@app.route('/api/saved-list', methods=['GET'])
-def api_get_saved_list():
-    """Return the last saved sorted Letterboxd list."""
+SAVED_LISTS_FILE = os.path.join(os.path.dirname(__file__), 'saved_lists.json')
+
+def _load_lists():
+    if os.path.exists(SAVED_LISTS_FILE):
+        with open(SAVED_LISTS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f).get('lists', [])
+    return []
+
+def _save_lists(lists):
+    with open(SAVED_LISTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump({'lists': lists}, f, ensure_ascii=False, indent=2)
+
+
+@app.route('/api/saved-lists', methods=['GET'])
+def api_get_saved_lists():
+    """Return all saved lists (metadata + movies)."""
     try:
-        if os.path.exists(SAVED_LIST_FILE):
-            with open(SAVED_LIST_FILE, 'r', encoding='utf-8') as f:
-                return jsonify(json.load(f))
-        return jsonify({'movies': [], 'url': '', 'savedAt': None})
+        return jsonify({'lists': _load_lists()})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/saved-list', methods=['POST'])
-def api_save_list():
-    """Persist the sorted list to a JSON file on the server."""
+@app.route('/api/saved-lists', methods=['POST'])
+def api_create_saved_list():
+    """Save a new named list."""
     body = request.get_json(force=True, silent=True) or {}
+    name    = (body.get('name') or 'My List').strip()[:60]
     movies  = body.get('movies', [])
     url     = body.get('url', '')
     if not movies:
         return jsonify({'error': 'No movies to save'}), 400
     try:
-        import datetime
-        payload = {
-            'movies':  movies,
+        lists = _load_lists()
+        entry = {
+            'id':      str(uuid.uuid4()),
+            'name':    name,
             'url':     url,
-            'savedAt': datetime.datetime.utcnow().isoformat() + 'Z',
             'total':   len(movies),
+            'savedAt': datetime.datetime.utcnow().isoformat() + 'Z',
+            'movies':  movies,
         }
-        with open(SAVED_LIST_FILE, 'w', encoding='utf-8') as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        return jsonify({'ok': True, 'total': len(movies)})
+        lists.insert(0, entry)   # newest first
+        _save_lists(lists)
+        return jsonify({'ok': True, 'id': entry['id'], 'total': len(movies)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/saved-lists/<list_id>', methods=['DELETE'])
+def api_delete_saved_list(list_id):
+    """Delete a saved list by ID."""
+    try:
+        lists = _load_lists()
+        lists = [l for l in lists if l.get('id') != list_id]
+        _save_lists(lists)
+        return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

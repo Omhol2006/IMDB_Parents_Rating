@@ -244,51 +244,106 @@ function renderGuideCard(data, movie) {
 // ════════════════════════════════════════════════════════════
 // PANEL 2 – LETTERBOXD SORTER
 // ════════════════════════════════════════════════════════════
-const lbUrlInput      = document.getElementById('lb-url-input');
-const lbFetchBtn      = document.getElementById('lb-fetch-btn');
-const lbProgressSec   = document.getElementById('lb-progress-section');
-const lbProgressBar   = document.getElementById('lb-progress-bar');
-const lbProgressLabel = document.getElementById('lb-progress-label');
-const lbProgressCount = document.getElementById('lb-progress-count');
-const lbProgressMovie = document.getElementById('lb-progress-movie');
-const lbError         = document.getElementById('lb-error');
-const lbErrorMsg      = document.getElementById('lb-error-msg');
-const lbResults       = document.getElementById('lb-results');
-const lbTableBody     = document.getElementById('lb-table-body');
-const lbResultsTitle  = document.getElementById('lb-results-title');
-const lbRestoreBanner = document.getElementById('lb-restore-banner');
-const lbRestoreMeta   = document.getElementById('lb-restore-meta');
-const lbRestoreBtn    = document.getElementById('lb-restore-btn');
-const lbRestoreDismiss= document.getElementById('lb-restore-dismiss');
+const lbUrlInput          = document.getElementById('lb-url-input');
+const lbFetchBtn          = document.getElementById('lb-fetch-btn');
+const lbProgressSec       = document.getElementById('lb-progress-section');
+const lbProgressBar       = document.getElementById('lb-progress-bar');
+const lbProgressLabel     = document.getElementById('lb-progress-label');
+const lbProgressCount     = document.getElementById('lb-progress-count');
+const lbProgressMovie     = document.getElementById('lb-progress-movie');
+const lbError             = document.getElementById('lb-error');
+const lbErrorMsg          = document.getElementById('lb-error-msg');
+const lbResults           = document.getElementById('lb-results');
+const lbTableBody         = document.getElementById('lb-table-body');
+const lbResultsTitle      = document.getElementById('lb-results-title');
+const lbSaveBtn           = document.getElementById('lb-save-btn');
+const lbSaveName          = document.getElementById('lb-save-name');
+const lbSaveStatus        = document.getElementById('lb-save-status');
+const savedListsContainer = document.getElementById('saved-lists-container');
+const savedListsCount     = document.getElementById('saved-lists-count');
 
 let allMovieData = [];
 let activeFilter = 'all';
+let currentListUrl = '';
 
-// ── Check for saved list on page load ───────────────────────
-(async () => {
+// ── Saved Lists Sidebar ──────────────────────────────────
+async function loadSavedLists() {
   try {
-    const res  = await fetch(`${API}/api/saved-list`);
+    const res  = await fetch(`${API}/api/saved-lists`);
     const data = await res.json();
-    if (data.movies && data.movies.length > 0) {
-      const d = new Date(data.savedAt);
-      const when = isNaN(d) ? '' : ` — saved ${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
-      lbRestoreMeta.textContent = `${data.total} films${when}`;
-      show(lbRestoreBanner);
+    renderSavedLists(data.lists || []);
+  } catch (_) {}
+}
 
-      lbRestoreBtn.addEventListener('click', () => {
-        allMovieData = data.movies;
-        if (data.url) lbUrlInput.value = data.url;
-        hide(lbRestoreBanner);
-        renderLetterboxdResults(allMovieData, data.url || '');
-      });
+function renderSavedLists(lists) {
+  savedListsCount.textContent = lists.length;
+  if (!lists.length) {
+    savedListsContainer.innerHTML = '<p class="sidebar-empty">No saved lists yet.<br>Sort a list and save it!</p>';
+    return;
+  }
+  savedListsContainer.innerHTML = '';
+  lists.forEach(lst => {
+    const card = document.createElement('div');
+    card.className = 'saved-list-card';
+    const d = new Date(lst.savedAt);
+    const dateStr = isNaN(d) ? '' : d.toLocaleDateString('en-GB', {day:'2-digit', month:'short', year:'numeric'});
+    card.innerHTML = `
+      <div class="slc-name">${escHtml(lst.name)}</div>
+      <div class="slc-meta">${lst.total} films &middot; ${dateStr}</div>
+      <div class="slc-actions">
+        <button class="slc-restore" data-id="${lst.id}">Load</button>
+        <button class="slc-delete" data-id="${lst.id}" title="Delete">&#128465;</button>
+      </div>
+    `;
+    card.querySelector('.slc-restore').addEventListener('click', () => {
+      allMovieData = lst.movies;
+      currentListUrl = lst.url || '';
+      if (currentListUrl) lbUrlInput.value = currentListUrl;
+      renderLetterboxdResults(allMovieData, currentListUrl);
+    });
+    card.querySelector('.slc-delete').addEventListener('click', async () => {
+      if (!confirm(`Delete "${lst.name}"?`)) return;
+      try {
+        await fetch(`${API}/api/saved-lists/${lst.id}`, { method: 'DELETE' });
+        loadSavedLists();
+      } catch (_) {}
+    });
+    savedListsContainer.appendChild(card);
+  });
+}
 
-      lbRestoreDismiss.addEventListener('click', () => hide(lbRestoreBanner));
+// Save button
+lbSaveBtn.addEventListener('click', async () => {
+  const name = lbSaveName.value.trim() || 'My List';
+  if (!allMovieData.length) { lbSaveStatus.textContent = '⚠️ Nothing to save'; return; }
+  lbSaveBtn.disabled = true;
+  lbSaveStatus.textContent = 'Saving…';
+  try {
+    const res = await fetch(`${API}/api/saved-lists`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, movies: allMovieData, url: currentListUrl }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      lbSaveStatus.textContent = '✅ Saved!';
+      lbSaveName.value = '';
+      loadSavedLists();
+      setTimeout(() => { lbSaveStatus.textContent = ''; }, 3000);
+    } else {
+      lbSaveStatus.textContent = '❌ Error saving';
     }
-  } catch (_) {/* silently ignore if no saved list */}
-})();
+  } catch (_) { lbSaveStatus.textContent = '❌ Error saving'; }
+  lbSaveBtn.disabled = false;
+});
+
+// Load lists on tab click + on startup
+document.getElementById('tab-letterboxd').addEventListener('click', loadSavedLists);
+loadSavedLists();
 
 lbFetchBtn.addEventListener('click', startLetterboxdFetch);
 lbUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startLetterboxdFetch(); });
+
 
 async function startLetterboxdFetch() {
   const url = lbUrlInput.value.trim();
@@ -303,6 +358,7 @@ async function startLetterboxdFetch() {
   lbProgressCount.textContent = '0 / 0';
   lbProgressMovie.textContent = '';
   allMovieData = [];
+  currentListUrl = url;
 
   try {
     // Step 1: Get the list of films
@@ -369,15 +425,6 @@ async function startLetterboxdFetch() {
     lbProgressMovie.textContent = '';
 
     allMovieData = results;
-
-    // Auto-save to server
-    try {
-      await fetch(`${API}/api/saved-list`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ movies: results, url }),
-      });
-    } catch (_) {/* save failure is non-fatal */}
 
     await new Promise(r => setTimeout(r, 600));
     hide(lbProgressSec);
