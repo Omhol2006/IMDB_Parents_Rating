@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="CineGuard – Check IMDb parental guidance ratings and sort Letterboxd lists by content. Instantly know Sex & Nudity, Violence, Profanity ratings for any movie." />
+  <title>CineGuard – Movie Parental Guide & Letterboxd Sorter</title>
+  <style>
+    /* Inline font-face so no external request needed */
+    :root { --font-main: system-ui, -apple-system, 'Segoe UI', sans-serif; --font-display: Georgia, 'Times New Roman', serif; }
+  </style>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Ambient background orbs ─────────────────────────── -->
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- ── Film grain overlay ───────────────────────────────── -->
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- ══════════════════════════════════════════════════════
+       HEADER
+  ══════════════════════════════════════════════════════════ -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🎬</span>
+        <span class="logo-text">Cine<span class="logo-accent">Guard</span></span>
+      </div>
+      <p class="tagline">Know before you watch</p>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════════════════════
+       MAIN CONTENT
+  ══════════════════════════════════════════════════════════ -->
+  <main class="main-content">
+
+    <!-- ── Tab Navigation ────────────────────────────────── -->
+    <nav class="tab-nav" role="tablist" aria-label="Main navigation">
+      <button id="tab-search" class="tab-btn active" role="tab" aria-selected="true" aria-controls="panel-search">
+        <span class="tab-icon">🔍</span>
+        <span class="tab-label">Movie Search</span>
+      </button>
+      <button id="tab-letterboxd" class="tab-btn" role="tab" aria-selected="false" aria-controls="panel-letterboxd">
+        <span class="tab-icon">🎞️</span>
+        <span class="tab-label">Letterboxd Sorter</span>
+      </button>
+    </nav>
+
+    <!-- ══════════════════════════════════════════
+         PANEL 1 – MOVIE SEARCH
+    ══════════════════════════════════════════════ -->
+    <section id="panel-search" class="tab-panel active" role="tabpanel" aria-labelledby="tab-search">
+
+      <div class="panel-intro">
+        <h1>Search any movie or series</h1>
+        <p>Get the full IMDb parental guidance breakdown — instantly.</p>
+      </div>
+
+      <div class="search-bar-wrapper">
+        <div class="search-bar">
+          <span class="search-icon" aria-hidden="true">🔍</span>
+          <input
+            type="text"
+            id="search-input"
+            class="search-input"
+            placeholder="e.g. The Assessment, Oppenheimer, Breaking Bad…"
+            autocomplete="off"
+            aria-label="Search for a movie or series"
+          />
+          <button id="search-btn" class="search-submit-btn" aria-label="Search">
+            <span>Search</span>
+            <span class="btn-arrow">→</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Search Results Dropdown -->
+      <div id="search-results-list" class="search-results-list" role="listbox" aria-label="Search results" hidden></div>
+
+      <!-- Loading state -->
+      <div id="search-loading" class="loading-state" hidden>
+        <div class="spinner"></div>
+        <p>Searching IMDb…</p>
+      </div>
+
+      <!-- Guide Card -->
+      <div id="guide-card" class="guide-card" hidden>
+        <div class="guide-card-header">
+          <div class="guide-movie-info">
+            <img id="guide-poster" class="guide-poster" src="" alt="" />
+            <div class="guide-meta">
+              <h2 id="guide-title" class="guide-title"></h2>
+              <div class="guide-links">
+                <a id="guide-imdb-link" href="#" target="_blank" rel="noopener" class="ext-link imdb-link">
+                  📽️ IMDb Page
+                </a>
+                <a id="guide-pg-link" href="#" target="_blank" rel="noopener" class="ext-link pg-link">
+                  🔞 Parental Guide
+                </a>
+              </div>
+            </div>
+          </div>
+          <!-- Overall quick rating bar -->
+          <div id="quick-ratings" class="quick-ratings"></div>
+        </div>
+
+        <!-- Advisory Categories -->
+        <div id="categories-container" class="categories-container"></div>
+      </div>
+
+      <!-- Guide Loading -->
+      <div id="guide-loading" class="loading-state" hidden>
+        <div class="spinner"></div>
+        <p>Fetching parental guide from IMDb…</p>
+      </div>
+
+      <!-- Error state -->
+      <div id="search-error" class="error-state" hidden>
+        <span class="error-icon">⚠️</span>
+        <p id="search-error-msg"></p>
+      </div>
+
+    </section>
+
+    <!-- ══════════════════════════════════════════
+         PANEL 2 – LETTERBOXD SORTER
+    ══════════════════════════════════════════════ -->
+    <section id="panel-letterboxd" class="tab-panel" role="tabpanel" aria-labelledby="tab-letterboxd" hidden>
+
+      <div class="panel-intro">
+        <h2>Sort a Letterboxd list by Sex &amp; Nudity</h2>
+        <p>Paste any public Letterboxd list URL — we'll rank every film from <em>None</em> to <em>Severe</em>.</p>
+      </div>
+
+      <div class="lb-input-section">
+        <div class="url-input-wrapper">
+          <span class="url-prefix">🔗</span>
+          <input
+            type="text"
+            id="lb-url-input"
+            class="url-input"
+            placeholder="https://letterboxd.com/username/list/list-name/"
+            aria-label="Letterboxd list URL"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="lb-fetch-btn" class="fetch-btn">
+            <span>Fetch &amp; Sort</span>
+            <span class="btn-arrow">→</span>
+          </button>
+        </div>
+        <p class="input-hint">💡 The list must be <strong>public</strong>. Supports lists of up to ~200 films.</p>
+      </div>
+
+      <!-- Progress Section -->
+      <div id="lb-progress-section" class="progress-section" hidden>
+        <div class="progress-header">
+          <span id="lb-progress-label" class="progress-label">Starting…</span>
+          <span id="lb-progress-count" class="progress-count">0 / 0</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="lb-progress-bar" class="progress-bar-fill" style="width:0%"></div>
+        </div>
+        <p id="lb-progress-movie" class="progress-movie-name"></p>
+      </div>
+
+      <!-- Error -->
+      <div id="lb-error" class="error-state" hidden>
+        <span class="error-icon">⚠️</span>
+        <p id="lb-error-msg"></p>
+      </div>
+
+      <!-- Results -->
+      <div id="lb-results" class="lb-results" hidden>
+        <div class="results-header">
+          <div class="results-title-row">
+            <h3 id="lb-results-title" class="results-title"></h3>
+            <div class="filter-chips" role="group" aria-label="Filter by rating">
+              <button class="chip chip-all active" data-filter="all">All</button>
+              <button class="chip chip-none" data-filter="None">🟢 None</button>
+              <button class="chip chip-mild" data-filter="Mild">🟡 Mild</button>
+              <button class="chip chip-moderate" data-filter="Moderate">🟠 Moderate</button>
+              <button class="chip chip-severe" data-filter="Severe">🔴 Severe</button>
+              <button class="chip chip-unknown" data-filter="Unknown">⚪ Unknown</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="lb-table-wrapper" class="table-wrapper">
+          <table id="lb-table" class="lb-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Movie</th>
+                <th>Sex &amp; Nudity</th>
+                <th>Violence</th>
+                <th>Profanity</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="lb-table-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ══════════════════════════════════════════════════════
+       DETAIL MODAL (for Letterboxd row expand)
+  ══════════════════════════════════════════════════════════ -->
+  <div id="detail-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+    <div class="modal-box">
+      <button class="modal-close" id="modal-close-btn" aria-label="Close">✕</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <footer class="site-footer">
+    <p>CineGuard uses publicly available IMDb parental guide data · For personal use only</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
