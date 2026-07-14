@@ -139,6 +139,17 @@
         <p>Paste any public Letterboxd list URL — we'll rank every film from <em>None</em> to <em>Severe</em>.</p>
       </div>
 
+      <!-- Saved list restore banner -->
+      <div id="lb-restore-banner" class="restore-banner" hidden>
+        <span class="restore-icon">💾</span>
+        <div class="restore-text">
+          <strong>You have a saved list!</strong>
+          <span id="lb-restore-meta" class="restore-meta"></span>
+        </div>
+        <button id="lb-restore-btn" class="restore-btn">Restore List</button>
+        <button id="lb-restore-dismiss" class="restore-dismiss" aria-label="Dismiss">✕</button>
+      </div>
+
       <div class="lb-input-section">
         <div class="url-input-wrapper">
           <span class="url-prefix">🔗</span>
@@ -202,6 +213,8 @@
                 <th>Sex &amp; Nudity</th>
                 <th>Violence</th>
                 <th>Profanity</th>
+                <th title="IMDb Rating">⭐ IMDb</th>
+                <th title="Letterboxd Rating">🟢 LB</th>
                 <th>Details</th>
               </tr>
             </thead>

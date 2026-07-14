@@ -256,9 +256,36 @@ const lbErrorMsg      = document.getElementById('lb-error-msg');
 const lbResults       = document.getElementById('lb-results');
 const lbTableBody     = document.getElementById('lb-table-body');
 const lbResultsTitle  = document.getElementById('lb-results-title');
+const lbRestoreBanner = document.getElementById('lb-restore-banner');
+const lbRestoreMeta   = document.getElementById('lb-restore-meta');
+const lbRestoreBtn    = document.getElementById('lb-restore-btn');
+const lbRestoreDismiss= document.getElementById('lb-restore-dismiss');
 
 let allMovieData = [];
 let activeFilter = 'all';
+
+// ── Check for saved list on page load ───────────────────────
+(async () => {
+  try {
+    const res  = await fetch(`${API}/api/saved-list`);
+    const data = await res.json();
+    if (data.movies && data.movies.length > 0) {
+      const d = new Date(data.savedAt);
+      const when = isNaN(d) ? '' : ` — saved ${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+      lbRestoreMeta.textContent = `${data.total} films${when}`;
+      show(lbRestoreBanner);
+
+      lbRestoreBtn.addEventListener('click', () => {
+        allMovieData = data.movies;
+        if (data.url) lbUrlInput.value = data.url;
+        hide(lbRestoreBanner);
+        renderLetterboxdResults(allMovieData, data.url || '');
+      });
+
+      lbRestoreDismiss.addEventListener('click', () => hide(lbRestoreBanner));
+    }
+  } catch (_) {/* silently ignore if no saved list */}
+})();
 
 lbFetchBtn.addEventListener('click', startLetterboxdFetch);
 lbUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startLetterboxdFetch(); });
@@ -343,6 +370,15 @@ async function startLetterboxdFetch() {
 
     allMovieData = results;
 
+    // Auto-save to server
+    try {
+      await fetch(`${API}/api/saved-list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ movies: results, url }),
+      });
+    } catch (_) {/* save failure is non-fatal */}
+
     await new Promise(r => setTimeout(r, 600));
     hide(lbProgressSec);
     renderLetterboxdResults(allMovieData, url);
@@ -362,7 +398,12 @@ function sortedByNudity(movies) {
   return [...movies].sort((a, b) => {
     const ra = (a.categories?.nudity?.rating) || 'Unknown';
     const rb = (b.categories?.nudity?.rating) || 'Unknown';
-    return (RATING_ORDER[ra] ?? 4) - (RATING_ORDER[rb] ?? 4);
+    const diff = (RATING_ORDER[ra] ?? 4) - (RATING_ORDER[rb] ?? 4);
+    if (diff !== 0) return diff;
+    // Tiebreaker: highest IMDb rating on top
+    const ia = a.imdbRating ?? -1;
+    const ib = b.imdbRating ?? -1;
+    return ib - ia;
   });
 }
 
@@ -385,26 +426,31 @@ function renderLetterboxdResults(movies, listUrl) {
 
 function renderTableRow(movie, rank) {
   const cats = movie.categories || {};
-  const nudityRating = cats.nudity?.rating || 'Unknown';
-  const violenceRating = cats.violence?.rating || 'Unknown';
+  const nudityRating    = cats.nudity?.rating    || 'Unknown';
+  const violenceRating  = cats.violence?.rating  || 'Unknown';
   const profanityRating = cats.profanity?.rating || 'Unknown';
+
+  const imdbRating = movie.imdbRating != null ? `⭐ ${movie.imdbRating.toFixed(1)}` : '—';
+  const lbRating   = movie.lbRating   != null ? `🟢 ${movie.lbRating.toFixed(2)}` : '—';
 
   const tr = document.createElement('tr');
   tr.dataset.nudityRating = nudityRating;
 
-  const imdbHref = movie.imdbId ? `https://www.imdb.com/title/${movie.imdbId}/` : '#';
-  const letterboxdHref = movie.slug ? `https://letterboxd.com/film/${movie.slug}/` : '#';
+  const imdbHref       = movie.imdbId ? `https://www.imdb.com/title/${movie.imdbId}/` : '#';
+  const letterboxdHref = movie.slug   ? `https://letterboxd.com/film/${movie.slug}/`  : '#';
 
   tr.innerHTML = `
     <td class="row-number">${rank}</td>
     <td class="movie-cell">
       <a href="${letterboxdHref}" target="_blank" rel="noopener" class="movie-title-link">${escHtml(movie.title || movie.slug)}</a>
-      ${movie.imdbId ? `<div class="movie-year"><a href="${imdbHref}" target="_blank" rel="noopener" class="movie-title-link" style="font-size:0.75rem;opacity:0.7">${escHtml(movie.imdbId)}</a></div>` : ''}
+      ${movie.year ? `<div class="movie-year">${escHtml(String(movie.year))}</div>` : ''}
       ${movie.error ? `<div class="movie-year" style="color:#ff8a8a">⚠️ ${escHtml(movie.error)}</div>` : ''}
     </td>
     <td>${buildRatingBadge(nudityRating)}</td>
     <td>${buildRatingBadge(violenceRating)}</td>
     <td>${buildRatingBadge(profanityRating)}</td>
+    <td class="rating-num">${movie.imdbId ? `<a href="${imdbHref}" target="_blank" rel="noopener" class="movie-title-link">${imdbRating}</a>` : imdbRating}</td>
+    <td class="rating-num">${movie.slug ? `<a href="${letterboxdHref}" target="_blank" rel="noopener" class="movie-title-link">${lbRating}</a>` : lbRating}</td>
     <td>
       <button class="details-btn" data-slug="${escHtml(movie.slug || '')}">View All</button>
     </td>

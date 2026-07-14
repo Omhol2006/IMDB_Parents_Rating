@@ -1,3 +1,4 @@
+import os
 import time
 import random
 import re
@@ -124,6 +125,10 @@ PARENTAL_GUIDE_QUERY = """query GetParentsGuide($id: ID!) {
     titleText { text }
     releaseYear { year }
     primaryImage { url }
+    ratingsSummary {
+      aggregateRating
+      voteCount
+    }
     parentsGuide {
       categories {
         category { id text }
@@ -176,6 +181,10 @@ def get_parental_guide(imdb_id):
         if poster:
             poster = poster.split('._V1_')[0] + '._V1_UX80_CR0,2,80,116_.jpg'
 
+        ratings_summary = title_data.get('ratingsSummary', {}) or {}
+        imdb_rating = ratings_summary.get('aggregateRating')  # float or None
+        vote_count  = ratings_summary.get('voteCount', 0)
+
         categories_raw = title_data.get('parentsGuide', {}).get('categories', [])
         categories = {}
 
@@ -208,6 +217,8 @@ def get_parental_guide(imdb_id):
             'title': title_text,
             'year': str(year) if year else '',
             'poster': poster,
+            'imdbRating': imdb_rating,
+            'voteCount': vote_count,
             'imdbUrl': f'https://www.imdb.com/title/{imdb_id}/',
             'parentalGuideUrl': f'https://www.imdb.com/title/{imdb_id}/parentalguide',
             'categories': categories,
@@ -310,52 +321,62 @@ def scrape_letterboxd_list(list_url):
 
 
 def get_imdb_id_from_letterboxd(slug):
-
-    """Visit the Letterboxd film page and extract the IMDb link."""
+    """Visit the Letterboxd film page and extract the IMDb link + Letterboxd rating.
+    Returns a dict: { 'imdbId': str|None, 'lbRating': float|None }
+    """
     from bs4 import BeautifulSoup
 
     url = f"https://letterboxd.com/film/{slug}/"
+    result = {'imdbId': None, 'lbRating': None}
     try:
         _sleep()
         resp = LB_SESSION.get(url, timeout=12)
         if resp.status_code != 200:
-            return None
+            return result
 
         soup = BeautifulSoup(resp.text, 'html.parser')
 
-        # IMDb link in sidebar
-        imdb_link = soup.find('a', href=re.compile(r'imdb\.com/title/(tt\d+)'))
-        if imdb_link:
-            match = re.search(r'imdb\.com/title/(tt\d+)', imdb_link.get('href', ''))
-            if match:
-                return match.group(1)
-
-        # Try meta tags or script tags
+        # ── Letterboxd rating ──
+        # Appears in JSON-LD as aggregateRating.ratingValue
         for script in soup.find_all('script', type='application/ld+json'):
             try:
                 data = json.loads(script.string or '{}')
+                # Grab LB rating
+                agg = data.get('aggregateRating', {})
+                if agg and agg.get('ratingValue'):
+                    result['lbRating'] = float(agg['ratingValue'])
+                # Grab IMDb ID from sameAs
                 same_as = data.get('sameAs', [])
                 if isinstance(same_as, list):
                     for link in same_as:
-                        match = re.search(r'imdb\.com/title/(tt\d+)', link)
-                        if match:
-                            return match.group(1)
+                        m = re.search(r'imdb\.com/title/(tt\d+)', link)
+                        if m:
+                            result['imdbId'] = m.group(1)
                 elif isinstance(same_as, str):
-                    match = re.search(r'imdb\.com/title/(tt\d+)', same_as)
-                    if match:
-                        return match.group(1)
+                    m = re.search(r'imdb\.com/title/(tt\d+)', same_as)
+                    if m:
+                        result['imdbId'] = m.group(1)
             except Exception:
                 pass
 
-        # Search text for IMDb ID pattern as last resort
-        match = re.search(r'imdb\.com/title/(tt\d+)', resp.text)
-        if match:
-            return match.group(1)
+        # ── Fallback: IMDb link in sidebar ──
+        if not result['imdbId']:
+            imdb_link = soup.find('a', href=re.compile(r'imdb\.com/title/(tt\d+)'))
+            if imdb_link:
+                m = re.search(r'imdb\.com/title/(tt\d+)', imdb_link.get('href', ''))
+                if m:
+                    result['imdbId'] = m.group(1)
 
-        return None
+        # ── Fallback: text search ──
+        if not result['imdbId']:
+            m = re.search(r'imdb\.com/title/(tt\d+)', resp.text)
+            if m:
+                result['imdbId'] = m.group(1)
+
+        return result
     except Exception as e:
         print(f"Error getting IMDb ID for {slug}: {e}")
-        return None
+        return result
 
 
 # ---------------------------------------------------------------------------
@@ -422,11 +443,15 @@ def api_letterboxd_film_guide():
     if not slug:
         return jsonify({'error': 'Slug is required'}), 400
 
-    imdb_id = None
+    lb_info   = {}
+    imdb_id   = None
+    lb_rating = None
     error_msg = None
 
     try:
-        imdb_id = get_imdb_id_from_letterboxd(slug)
+        lb_info   = get_imdb_id_from_letterboxd(slug)
+        imdb_id   = lb_info.get('imdbId')
+        lb_rating = lb_info.get('lbRating')
     except Exception as e:
         error_msg = str(e)
 
@@ -435,6 +460,7 @@ def api_letterboxd_film_guide():
             'slug': slug,
             'title': title,
             'imdbId': None,
+            'lbRating': lb_rating,
             'error': error_msg or 'IMDb ID not found on Letterboxd',
             'categories': {k: {'label': v, 'rating': 'Unknown', 'descriptions': []}
                            for k, v in CATEGORY_LABEL_MAP.items()},
@@ -451,16 +477,58 @@ def api_letterboxd_film_guide():
             'slug': slug,
             'title': title,
             'imdbId': imdb_id,
+            'lbRating': lb_rating,
             'error': error_msg or 'Could not fetch parental guide from IMDb',
             'categories': {k: {'label': v, 'rating': 'Unknown', 'descriptions': []}
                            for k, v in CATEGORY_LABEL_MAP.items()},
         })
 
     guide['slug'] = slug
+    guide['lbRating'] = lb_rating
     if not guide.get('title'):
         guide['title'] = title
 
     return jsonify(guide)
+
+
+# ---------------------------------------------------------------------------
+# Saved List API  (server-side JSON file persistence)
+# ---------------------------------------------------------------------------
+SAVED_LIST_FILE = os.path.join(os.path.dirname(__file__), 'saved_list.json')
+
+@app.route('/api/saved-list', methods=['GET'])
+def api_get_saved_list():
+    """Return the last saved sorted Letterboxd list."""
+    try:
+        if os.path.exists(SAVED_LIST_FILE):
+            with open(SAVED_LIST_FILE, 'r', encoding='utf-8') as f:
+                return jsonify(json.load(f))
+        return jsonify({'movies': [], 'url': '', 'savedAt': None})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/saved-list', methods=['POST'])
+def api_save_list():
+    """Persist the sorted list to a JSON file on the server."""
+    body = request.get_json(force=True, silent=True) or {}
+    movies  = body.get('movies', [])
+    url     = body.get('url', '')
+    if not movies:
+        return jsonify({'error': 'No movies to save'}), 400
+    try:
+        import datetime
+        payload = {
+            'movies':  movies,
+            'url':     url,
+            'savedAt': datetime.datetime.utcnow().isoformat() + 'Z',
+            'total':   len(movies),
+        }
+        with open(SAVED_LIST_FILE, 'w', encoding='utf-8') as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        return jsonify({'ok': True, 'total': len(movies)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':
